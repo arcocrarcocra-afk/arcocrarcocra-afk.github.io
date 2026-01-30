@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VAT Ⅱ Converter</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+
+
+
+<style>
+:root{--green:#00ff66;--glow:rgba(0,255,100,.6);--border:#0f3;}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;overflow:hidden;background:#000;font-family:'Share Tech Mono', monospace;color:var(--green);}
+canvas{position:fixed;inset:0;z-index:0}
+.scanlines{position:fixed;inset:0;z-index:2;pointer-events:none;background:linear-gradient(rgba(0,255,100,.06) 1px,transparent 1px);background-size:100% 3px;animation:scan 8s linear infinite;}
+@keyframes scan{to{background-position:0 100%}}
+.card{position:relative;z-index:3;max-width:600px;margin:6vh auto;padding:40px;border:1px solid var(--border);background:linear-gradient(180deg,#020402,#000);box-shadow:0 0 30px var(--glow),0 0 80px rgba(0,255,100,.2);}
+.card.glitch{animation:glitch .15s linear 2}
+@keyframes glitch{25%{transform:translate(-2px,1px)}50%{transform:translate(2px,-1px)}75%{transform:translate(-1px,2px)}}
+h1{text-align:center;letter-spacing:4px;margin:0 0 20px;text-shadow:0 0 12px var(--glow)}
+.boot{text-align:center;font-size:14px;margin-bottom:20px;opacity:.8}
+label{font-size:12px;letter-spacing:2px;opacity:.8}
+textarea{width:100%;height:140px;padding:16px;background:#000;border:1px solid var(--border);color:var(--green);font-family:'Share Tech Mono', monospace;resize:none;outline:none;}
+textarea:focus{box-shadow:0 0 12px var(--glow)}
+#result{cursor:pointer}
+.flash{animation:flash .25s ease}
+@keyframes flash{50%{box-shadow:0 0 30px var(--glow)}}
+.notice{text-align:center;font-size:11px;margin-top:6px;opacity:.7}
+.lock{opacity:.4;pointer-events:none}
+
+
+
+
+/* lock */
+#lockscreen{
+position:fixed;inset:0;z-index:10;
+background:#000;display:flex;
+align-items:center;justify-content:center;
+}
+.pass-box{display:flex;gap:10px;}
+.pass-box input{
+width:42px;height:56px;
+text-align:center;font-size:28px;
+background:#000;border:1px solid var(--border);
+color:var(--green);
+}
+</style>
+</head>
+
+
+
+
+<body>
+<canvas id="matrix"></canvas>
+<div class="scanlines"></div>
+
+
+
+
+<div id="lockscreen">
+  <div>
+    <h1>LOCKED</h1>
+    <div class="pass-box" id="passBox"></div>
+    <div class="notice" id="lockNotice"></div>
+  </div>
+</div>
+
+
+
+
+<div class="card lock" id="card">
+<h1>VAT Ⅱ TERMINAL</h1>
+<div class="boot" id="boot">SYSTEM BOOTING...</div>
+
+
+
+
+<label>INPUT</label>
+<textarea id="input" placeholder="LOCKED" disabled></textarea>
+
+
+
+
+<label style="margin-top:18px">RESULT</label>
+<textarea id="result" readonly></textarea>
+<div class="notice" id="notice"></div>
+</div>
+
+
+
+
+<script>
+/* ===== Matrix rain ===== */
+const cvs=document.getElementById("matrix"),ctx=cvs.getContext("2d");
+let w,h,cols,drops;
+function resize(){
+w=cvs.width=innerWidth;
+h=cvs.height=innerHeight;
+cols=Math.floor(w/14);
+drops=Array(cols).fill(0);
+}
+addEventListener("resize",resize);resize();
+(function rain(){
+ctx.fillStyle="rgba(0,0,0,.08)";
+ctx.fillRect(0,0,w,h);
+ctx.fillStyle="#00ff66";
+ctx.font="14px monospace";
+for(let i=0;i<drops.length;i++){
+const t=String.fromCharCode(0x30A0+Math.random()*96);
+ctx.fillText(t,i*14,drops[i]*14);
+if(drops[i]*14>h&&Math.random()>.975)drops[i]=0;
+drops[i]++;
+}
+requestAnimationFrame(rain);
+})();
+
+
+
+
+/* ===== Sound ===== */
+let ac;
+function unlockAudio(){
+if(!ac) ac=new(window.AudioContext||window.webkitAudioContext)();
+}
+function beep(f,d,v){
+if(!ac) return;
+const o=ac.createOscillator(),g=ac.createGain();
+o.type="square";o.frequency.value=f;g.gain.value=v;
+o.connect(g).connect(ac.destination);
+o.start();o.stop(ac.currentTime+d);
+}
+const keySound=()=>beep(900,.03,.02);
+const copySound=()=>beep(420,.09,.04);
+const bootSound=()=>{beep(120,.15,.06);setTimeout(()=>beep(240,.15,.05),160);setTimeout(()=>beep(480,.12,.04),320);}
+const errorSound=()=>beep(80,.3,.08);
+
+
+
+
+/* ===== History ===== */
+const historyLog = [];
+const HISTORY_LIMIT = 30;
+
+
+
+
+/* ===== Boot / unlock ===== */
+const card=document.getElementById("card");
+const boot=document.getElementById("boot");
+const input=document.getElementById("input");
+const result=document.getElementById("result");
+const notice=document.getElementById("notice");
+
+
+
+
+/* ===== Lock ===== */
+const PASS="117145";
+const passBox=document.getElementById("passBox");
+const lockNotice=document.getElementById("lockNotice");
+let buf="";
+for(let i=0;i<6;i++){
+const inp=document.createElement("input");
+inp.type="password";
+inp.inputMode="numeric";
+inp.maxLength=1;
+inp.addEventListener("input",e=>{
+unlockAudio();keySound();
+buf+=e.target.value;
+if(e.target.nextElementSibling)e.target.nextElementSibling.focus();
+if(buf.length===6){
+if(buf===PASS){
+lockNotice.textContent="unlocked";
+document.getElementById("lockscreen").style.display="none";
+card.classList.remove("lock");
+input.disabled=false;
+input.placeholder="JHT / VAT Ⅱ / command";
+boot.textContent="SYSTEM READY";
+bootSound();
+}else{
+card.classList.add("glitch");
+errorSound();
+lockNotice.textContent="ERROR";
+buf="";
+passBox.querySelectorAll("input").forEach(i=>i.value="");
+passBox.querySelector("input").focus();
+}
+}
+});
+passBox.appendChild(inp);
+}
+passBox.querySelector("input").focus();
+
+
+
+
+/* ===== VAT logic（元コードそのまま） ===== */
+const kanaMap={あ:"a",い:"q",う:"ë",え:"d",お:"è",か:"c",き:"cq",く:"cë",け:"cd",こ:"cè",さ:"x",し:"xq",す:"xë",せ:"xd",そ:"xè",た:"e",ち:"eq",つ:"eë",て:"ed",と:"eè",な:"h",に:"hq",ぬ:"hë",ね:"hd",の:"hè",は:"é",ひ:"éq",ふ:"éë",へ:"éd",ほ:"éè",ま:"ć",み:"ćq",む:"ćë",め:"ćd",も:"ćè",や:"b",ゆ:"bë",よ:"bè",ら:"g",り:"gq",る:"gë",れ:"gd",ろ:"gè",わ:"r",を:"rè",ん:"hr"};
+const smallKanaMap={ぁ:"a-",ぃ:"q-",ぅ:"ë-",ぇ:"d-",ぉ:"è-",ゃ:"b-",ゅ:"bë-",ょ:"bè-",っ:"eë-"};
+const reverseMap={};for(const[k,v]of Object.entries(kanaMap))reverseMap[v]=k;
+
+
+
+
+function kanaToVat(t){
+let r="";
+for(let i=0;i<t.length;i++){
+let c=t[i],n=t[i+1]||"",s="",b=c;
+if(c==="ー"){r+="+";continue}
+if(smallKanaMap[c]){r+=smallKanaMap[c];continue}
+if("がぎぐげござじずぜぞだぢづでどばびぶべぼ".includes(c)){b=String.fromCharCode(c.charCodeAt(0)-1);s=","}
+else if("ぱぴぷぺぽ".includes(c)){b=String.fromCharCode(c.charCodeAt(0)-2);s="*"}
+let v=kanaMap[b]||c;
+if(["a","c","x","e","h","é","ć","b","g","r"].includes(v)&&"あいうえお".includes(n))v+=v;
+r+=v+s
+}
+return r
+}
+
+
+
+
+function vatToKana(t){
+let r="",i=0,codes=Object.keys(reverseMap).sort((a,b)=>b.length-a.length);
+while(i<t.length){
+if(t[i]==="+"){r+="ー";i++;continue}
+let f=false;
+for(let c of codes){
+let d=t.startsWith(c+c,i)&&c.length===1&&"acxehéćbgr".includes(c);
+if(t.startsWith(c,i)){
+let k=reverseMap[c],l=d?c.length*2:c.length,s=t[i+l];
+if(s===","){k=String.fromCharCode(k.charCodeAt(0)+1);l++}
+else if(s==="*"){k=String.fromCharCode(k.charCodeAt(0)+2);l++}
+else if(s==="-"){
+const m={あ:"ぁ",い:"ぃ",う:"ぅ",え:"ぇ",お:"ぉ",や:"ゃ",ゆ:"ゅ",よ:"ょ",つ:"っ"};
+k=(c==="eë")?"っ":(m[k]||k);l++
+}
+r+=k;i+=l;f=true;break
+}
+}
+if(!f){r+=t[i];i++}
+}
+return r
+}
+
+
+
+
+function traceKanaToVat(str){
+  let lines=[];
+  for(let c of str){
+    if(c==="ー"){
+      lines.push("ー → +");
+      continue;
+    }
+    let base=c, mark="";
+    if("がぎぐげござじずぜぞだぢづでどばびぶべぼ".includes(c)){
+      base=String.fromCharCode(c.charCodeAt(0)-1);
+      mark=",";
+    }else if("ぱぴぷぺぽ".includes(c)){
+      base=String.fromCharCode(c.charCodeAt(0)-2);
+      mark="*";
+    }
+    let v=kanaMap[base] || "(?)";
+    lines.push(`${c} → ${v}${mark}`);
+  }
+  return lines.join("\n");
+}
+
+
+
+
+/* ===== VAT mode ===== */
+let vatMode=2; // 2 = VATⅡ, 1 = VATⅠ
+
+
+
+
+function kataToHira(str){
+return str.replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
+}
+
+
+
+
+/* ===== live input ===== */
+input.addEventListener("input",()=>{
+unlockAudio();
+keySound();
+
+
+const t = input.value.trim();
+
+
+/* ===== /history ===== */
+if(t.startsWith("/history")){
+  const arg = t.split(" ")[1];
+
+
+  if(arg !== undefined){
+    const idx = Number(arg);
+    if(!Number.isNaN(idx) && historyLog[idx]){
+      result.value = historyLog[idx].output;
+      notice.textContent = `RESTORED [${idx}]`;
+    }else{
+      result.value = "NO SUCH HISTORY";
+    }
+    return;
+  }
+
+
+  if(historyLog.length === 0){
+    result.value = "NO HISTORY";
+    return;
+  }
+
+
+  result.value = historyLog
+    .map((h,i)=>`[${i}] (${h.mode===2?"VATⅡ":"VATⅠ"}) ${h.input} → ${h.output}`)
+    .join("\n");
+  return;
+}
+
+
+/* ===== /trace ===== */
+if(t === "/trace"){
+  if(!historyLog.length){
+    result.value = "NO DATA TO TRACE";
+    return;
+  }
+  const last = historyLog[historyLog.length-1];
+  if(/[ぁ-ん]/.test(last.input)){
+    result.value = traceKanaToVat(last.input);
+  }else{
+    result.value = "TRACE FOR VAT→KANA NOT IMPLEMENTED";
+  }
+  return;
+}
+
+
+
+
+if(t==="/vat1"){vatMode=1;result.value="VATⅠ MODE";return}
+if(t==="/vat2"){vatMode=2;result.value="VATⅡ MODE";return}
+
+
+
+
+let src=t;
+if(vatMode===1) src=kataToHira(src);
+
+
+
+
+result.value=src?(/[ぁ-ん]/.test(src)?kanaToVat(src):vatToKana(src)):"";
+if(src){
+  historyLog.push({
+    input: src,
+    output: result.value,
+    mode: vatMode
+  });
+  if(historyLog.length > HISTORY_LIMIT) historyLog.shift();
+}
+});
+
+
+
+
+/* ===== copy ===== */
+async function copyText(text){
+try{await navigator.clipboard.writeText(text);return true}
+catch{
+const tmp=document.createElement("textarea");
+tmp.value=text;document.body.appendChild(tmp);
+tmp.select();const ok=document.execCommand("copy");
+document.body.removeChild(tmp);return ok;
+}
+}
+
+
+
+
+result.addEventListener("click",async()=>{
+if(!result.value)return;
+const ok=await copyText(result.value);
+copySound();
+result.classList.add("flash");
+card.classList.add("glitch");
+notice.textContent=ok?"COPIED":"COPY FAILED";
+setTimeout(()=>{
+result.classList.remove("flash");
+card.classList.remove("glitch");
+notice.textContent="";
+},400);
+});
+</script>
+</body>
+</html>
