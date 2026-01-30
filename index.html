@@ -10,8 +10,18 @@
   
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
 
+<script>
+const HISTORY_KEY = "command_history";
 
+function loadHistory() {
+  const data = localStorage.getItem(HISTORY_KEY);
+  return data ? JSON.parse(data) : [];
+}
 
+function saveHistory(history) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+</script>
 
 <style>
 :root{--green:#00ff66;--glow:rgba(0,255,100,.6);--border:#0f3;}
@@ -34,9 +44,6 @@ textarea:focus{box-shadow:0 0 12px var(--glow)}
 .notice{text-align:center;font-size:11px;margin-top:6px;opacity:.7}
 .lock{opacity:.4;pointer-events:none}
 
-
-
-
 /* lock */
 #lockscreen{
 position:fixed;inset:0;z-index:10;
@@ -53,15 +60,9 @@ color:var(--green);
 </style>
 </head>
 
-
-
-
 <body>
 <canvas id="matrix"></canvas>
 <div class="scanlines"></div>
-
-
-
 
 <div id="lockscreen">
   <div>
@@ -71,29 +72,17 @@ color:var(--green);
   </div>
 </div>
 
-
-
-
 <div class="card lock" id="card">
 <h1>VAT Ⅱ TERMINAL</h1>
 <div class="boot" id="boot">SYSTEM BOOTING...</div>
 
-
-
-
 <label>INPUT</label>
 <textarea id="input" placeholder="LOCKED" disabled></textarea>
-
-
-
 
 <label style="margin-top:18px">RESULT</label>
 <textarea id="result" readonly></textarea>
 <div class="notice" id="notice"></div>
 </div>
-
-
-
 
 <script>
 /* ===== Matrix rain ===== */
@@ -120,9 +109,6 @@ drops[i]++;
 requestAnimationFrame(rain);
 })();
 
-
-
-
 /* ===== Sound ===== */
 let ac;
 function unlockAudio(){
@@ -140,15 +126,9 @@ const copySound=()=>beep(420,.09,.04);
 const bootSound=()=>{beep(120,.15,.06);setTimeout(()=>beep(240,.15,.05),160);setTimeout(()=>beep(480,.12,.04),320);}
 const errorSound=()=>beep(80,.3,.08);
 
-
-
-
 /* ===== History ===== */
-const historyLog = [];
+let historyLog = loadHistory();
 const HISTORY_LIMIT = 30;
-
-
-
 
 /* ===== Boot / unlock ===== */
 const card=document.getElementById("card");
@@ -156,9 +136,6 @@ const boot=document.getElementById("boot");
 const input=document.getElementById("input");
 const result=document.getElementById("result");
 const notice=document.getElementById("notice");
-
-
-
 
 /* ===== Lock ===== */
 const PASS="117145";
@@ -197,16 +174,10 @@ passBox.appendChild(inp);
 }
 passBox.querySelector("input").focus();
 
-
-
-
-/* ===== VAT logic（元コードそのまま） ===== */
+/* ===== VAT logic ===== */
 const kanaMap={あ:"a",い:"q",う:"ë",え:"d",お:"è",か:"c",き:"cq",く:"cë",け:"cd",こ:"cè",さ:"x",し:"xq",す:"xë",せ:"xd",そ:"xè",た:"e",ち:"eq",つ:"eë",て:"ed",と:"eè",な:"h",に:"hq",ぬ:"hë",ね:"hd",の:"hè",は:"é",ひ:"éq",ふ:"éë",へ:"éd",ほ:"éè",ま:"ć",み:"ćq",む:"ćë",め:"ćd",も:"ćè",や:"b",ゆ:"bë",よ:"bè",ら:"g",り:"gq",る:"gë",れ:"gd",ろ:"gè",わ:"r",を:"rè",ん:"hr"};
 const smallKanaMap={ぁ:"a-",ぃ:"q-",ぅ:"ë-",ぇ:"d-",ぉ:"è-",ゃ:"b-",ゅ:"bë-",ょ:"bè-",っ:"eë-"};
 const reverseMap={};for(const[k,v]of Object.entries(kanaMap))reverseMap[v]=k;
-
-
-
 
 function kanaToVat(t){
 let r="";
@@ -222,9 +193,6 @@ r+=v+s
 }
 return r
 }
-
-
-
 
 function vatToKana(t){
 let r="",i=0,codes=Object.keys(reverseMap).sort((a,b)=>b.length-a.length);
@@ -249,23 +217,15 @@ if(!f){r+=t[i];i++}
 return r
 }
 
-
-
-
 function traceKanaToVat(str){
   let lines=[];
   for(let c of str){
-    if(c==="ー"){
-      lines.push("ー → +");
-      continue;
-    }
+    if(c==="ー"){lines.push("ー → +");continue;}
     let base=c, mark="";
     if("がぎぐげござじずぜぞだぢづでどばびぶべぼ".includes(c)){
-      base=String.fromCharCode(c.charCodeAt(0)-1);
-      mark=",";
+      base=String.fromCharCode(c.charCodeAt(0)-1);mark=",";
     }else if("ぱぴぷぺぽ".includes(c)){
-      base=String.fromCharCode(c.charCodeAt(0)-2);
-      mark="*";
+      base=String.fromCharCode(c.charCodeAt(0)-2);mark="*";
     }
     let v=kanaMap[base] || "(?)";
     lines.push(`${c} → ${v}${mark}`);
@@ -273,104 +233,84 @@ function traceKanaToVat(str){
   return lines.join("\n");
 }
 
-
-
-
 /* ===== VAT mode ===== */
-let vatMode=2; // 2 = VATⅡ, 1 = VATⅠ
-
-
-
+let vatMode=2; 
 
 function kataToHira(str){
 return str.replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
 }
 
-
-
-
-/* ===== live input ===== */
+/* ===== main logic ===== */
 input.addEventListener("input",()=>{
-unlockAudio();
-keySound();
+  unlockAudio();
+  keySound();
+  const t = input.value.trim();
 
-
-const t = input.value.trim();
-
-
-/* ===== /history ===== */
-if(t.startsWith("/history")){
-  const arg = t.split(" ")[1];
-
-
-  if(arg !== undefined){
-    const idx = Number(arg);
-    if(!Number.isNaN(idx) && historyLog[idx]){
-      result.value = historyLog[idx].output;
-      notice.textContent = `RESTORED [${idx}]`;
-    }else{
-      result.value = "NO SUCH HISTORY";
+  if(t.startsWith("/history")){
+    const arg = t.split(" ")[1];
+    if(arg !== undefined){
+      const idx = Number(arg);
+      if(!Number.isNaN(idx) && historyLog[idx]){
+        result.value = historyLog[idx].output;
+        notice.textContent = `RESTORED [${idx}]`;
+      } else { result.value = "NO SUCH HISTORY"; }
+      return;
     }
+    if(historyLog.length === 0){ result.value = "NO HISTORY"; return; }
+    result.value = historyLog.map((h,i)=>`[${i}] (${h.mode===2?"VATⅡ":"VATⅠ"}) ${h.input} → ${h.output}`).join("\n");
     return;
   }
 
-
-  if(historyLog.length === 0){
-    result.value = "NO HISTORY";
+  if(t === "/trace"){
+    if(!historyLog.length){ result.value = "NO DATA TO TRACE"; return; }
+    const last = historyLog[historyLog.length-1];
+    result.value = /[ぁ-ん]/.test(last.input) ? traceKanaToVat(last.input) : "TRACE FOR VAT→KANA NOT IMPLEMENTED";
     return;
   }
 
+  if(t==="/clear"){result.value="CLEAR HISTORY (PRESS ENTER)";return}
+  if(t==="/vat1"){result.value="VATⅠ MODE (PRESS ENTER TO SET)";return}
+  if(t==="/vat2"){result.value="VATⅡ MODE (PRESS ENTER TO SET)";return}
 
-  result.value = historyLog
-    .map((h,i)=>`[${i}] (${h.mode===2?"VATⅡ":"VATⅠ"}) ${h.input} → ${h.output}`)
-    .join("\n");
-  return;
-}
-
-
-/* ===== /trace ===== */
-if(t === "/trace"){
-  if(!historyLog.length){
-    result.value = "NO DATA TO TRACE";
-    return;
-  }
-  const last = historyLog[historyLog.length-1];
-  if(/[ぁ-ん]/.test(last.input)){
-    result.value = traceKanaToVat(last.input);
-  }else{
-    result.value = "TRACE FOR VAT→KANA NOT IMPLEMENTED";
-  }
-  return;
-}
-
-
-
-
-if(t==="/vat1"){vatMode=1;result.value="VATⅠ MODE";return}
-if(t==="/vat2"){vatMode=2;result.value="VATⅡ MODE";return}
-
-
-
-
-let src=t;
-if(vatMode===1) src=kataToHira(src);
-
-
-
-
-result.value=src?(/[ぁ-ん]/.test(src)?kanaToVat(src):vatToKana(src)):"";
-if(src){
-  historyLog.push({
-    input: src,
-    output: result.value,
-    mode: vatMode
-  });
-  if(historyLog.length > HISTORY_LIMIT) historyLog.shift();
-}
+  let src = (vatMode===1) ? kataToHira(t) : t;
+  result.value = src ? (/[ぁ-ん]/.test(src) ? kanaToVat(src) : vatToKana(src)) : "";
 });
 
+// ENTER押下時のアクション
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault(); 
+    const t = input.value.trim();
+    if(!t) return;
 
+    // --- /clear command ---
+    if (t === "/clear") {
+      localStorage.removeItem(HISTORY_KEY);
+      historyLog = [];
+      result.value = "HISTORY DELETED";
+      notice.textContent = "DATABASE WIPED";
+      input.value = "";
+      errorSound();
+      return;
+    }
 
+    if(t === "/vat1") { vatMode = 1; notice.textContent = "MODE: VATⅠ"; input.value = ""; return; }
+    if(t === "/vat2") { vatMode = 2; notice.textContent = "MODE: VATⅡ"; input.value = ""; return; }
+    if(t.startsWith("/history") || t === "/trace") return;
+
+    // Save normally
+    let src = (vatMode===1) ? kataToHira(t) : t;
+    let out = (/[ぁ-ん]/.test(src) ? kanaToVat(src) : vatToKana(src));
+
+    historyLog.push({ input: src, output: out, mode: vatMode });
+    if(historyLog.length > HISTORY_LIMIT) historyLog.shift();
+    saveHistory(historyLog); 
+    
+    notice.textContent = "EXECUTED";
+    input.value = ""; 
+    setTimeout(() => { notice.textContent = ""; }, 2000);
+  }
+});
 
 /* ===== copy ===== */
 async function copyText(text){
@@ -382,9 +322,6 @@ tmp.select();const ok=document.execCommand("copy");
 document.body.removeChild(tmp);return ok;
 }
 }
-
-
-
 
 result.addEventListener("click",async()=>{
 if(!result.value)return;
@@ -402,3 +339,5 @@ notice.textContent="";
 </script>
 </body>
 </html>
+
+
